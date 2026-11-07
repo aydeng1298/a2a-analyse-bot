@@ -1,0 +1,56 @@
+name = "a2a-analyse-bot"
+main = "src/worker.js"
+compatibility_date = "2026-11-01"
+
+# Works through bulk lists once a minute (only does anything when a list is queued).
+[triggers]
+crons = ["* * * * *"]
+
+# Storage for bulk lists and daily limits. `npm run setup` fills in the id for you.
+[[kv_namespaces]]
+binding = "BOT_KV"
+id = "REPLACE_WITH_YOUR_KV_ID"
+
+# ---------------------------------------------------------------------------
+# YOUR RULES. Change these to match how you source, then run `npm run deploy`.
+# Money is in £. ROI and percentages are decimals (0.20 = 20%).
+# ---------------------------------------------------------------------------
+[vars]
+# Are you VAT-registered? true = output VAT is taken off the sale and the VAT on your buy price is reclaimed.
+VAT_REGISTERED = "true"
+
+# Your costs per unit
+PREP_FEE = "0.38"            # prep centre fee per unit
+INBOUND_PER_KG = "0.30"      # shipping to Amazon, per kg
+STORAGE_PER_CUFT = "1.10"    # FBA storage per cubic foot per month (peak rate; a rough guide)
+
+# Required ROI by sales per month, as "min sales:ROI". Anything under the first number is a skip.
+# Default: 10-14/mo needs 80%, 15-19 needs 30%, 20-49 needs 20%, 50-99 needs 17%, 100+ needs 15%.
+ROI_LADDER = "10:0.80,15:0.30,20:0.20,50:0.17,100:0.15"
+UNKNOWN_SALES_ROI = "0.20"   # ROI needed when sales per month are unknown
+
+MIN_PROFIT = "1.00"          # below this is a skip
+TARGET_PROFIT = "2.00"       # at or above this (and meeting ROI) is a Buy (4/5)
+
+# Strong buy (5/5): ROI this much over what it needs, at least this profit and these sales, and no warnings
+STRONG_ROI_MARGIN = "0.10"
+STRONG_PROFIT = "3.00"
+STRONG_SALES = "30"
+
+MIN_PRICE_ROI = "0.15"       # "Min price" on the card = lowest sale price that still makes this ROI and MIN_PROFIT
+Q4_USE_LAST_YEAR = "true"    # Oct-Dec: if last Q4 sold faster than now, use last Q4's sales for the ROI ladder
+FALLBACK_FBA_FEE = "3.00"    # Keepa-only mode: FBA fee to assume when Keepa doesn't know it
+
+# ---------------------------------------------------------------------------
+# WHO CAN USE IT (leave blank for everyone in servers the bot is in).
+# Turn on Developer Mode in Discord (Settings > Advanced), then right-click a role/channel/user > Copy ID.
+# Separate several with commas.
+# ---------------------------------------------------------------------------
+ALLOWED_ROLE_IDS = ""
+ALLOWED_CHANNEL_IDS = ""
+ADMIN_USER_IDS = ""          # these people skip the role, channel and daily limits
+DAILY_LIMIT = "0"            # lookups per person per day (0 = no limit). A bulk list counts one per ASIN.
+
+# Bulk lists
+BULK_MAX = "50"              # most ASINs in one list
+BULK_PER_RUN = "4"           # ASINs per minute. Keep at 4 on the free Cloudflare plan; up to 20 on Workers Paid.

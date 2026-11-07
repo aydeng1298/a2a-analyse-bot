@@ -1,0 +1,15 @@
+{
+  "name": "a2a-analyse-bot",
+  "version": "1.0.0",
+  "description": "Discord bot that scores Amazon UK products for A2A / online arbitrage, running on your own Cloudflare account with your own Keepa (and optional Amazon SP-API) keys.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "deploy": "npx --yes wrangler@4 deploy",
+    "logs": "npx --yes wrangler@4 tail",
+    "test": "node test/test.mjs"
+  },
+  "engines": { "node": ">=18" },
+  "license": "MIT"
+}
