@@ -25,6 +25,8 @@ UK marketplace (amazon.co.uk) only.
 
 **Prefer a step-by-step guide?** Download the [Setup Guide (PDF)](docs/A2A-Analyse-Bot-Setup-Guide.pdf).
 
+**Stuck?** This is a free tool with **no personal support**. Copy the [AI setup helper prompt](docs/AI-SETUP-HELPER.md) into Claude, ChatGPT, Gemini or any AI assistant, and it'll walk you through every step and explain any error.
+
 ---
 
 ## What it costs
@@ -167,6 +169,8 @@ Remember: everyone in your server uses **your** Keepa tokens, and the gating che
 Back up your `wrangler.toml` (it holds your rules and your storage ID), download the new version, put your `wrangler.toml` back, and run `npm run setup` (leave every key blank to keep them). That also picks up any new commands.
 
 ## Troubleshooting
+Still stuck after this list? Use the [AI setup helper prompt](docs/AI-SETUP-HELPER.md): paste it into any AI assistant along with the error.
+
 - **Discord won't save the Interactions Endpoint URL**: the Public Key or Application ID is wrong. Run `npm run setup` again and re-enter them.
 - **"The application did not respond"**: run `npm run logs` in the folder, try the command again, and read the error.
 - **"Keepa is out of tokens"**: wait a few minutes, or lower `DAILY_LIMIT` / `BULK_PER_RUN`.
