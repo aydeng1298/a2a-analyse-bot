@@ -93,7 +93,7 @@ It will:
 
 ### 6. Connect Discord to the bot
 1. Back on your app's **General Information** page, paste the address the setup printed (it ends in `/interactions`) into **Interactions Endpoint URL** and click **Save Changes**. Discord checks it straight away; if it saves, it's working.
-2. Open the **invite link** from the setup and add the bot to your server.
+2. Open the **invite link** from the setup and add the bot to a server you own or manage. The bot doesn't work in DMs. No server of your own? In Discord click **+** at the bottom of your server list > **Create My Own** > **For me and my friends**, and you have a private one in seconds.
 
 Type `/analyse` in your server. Done.
 
