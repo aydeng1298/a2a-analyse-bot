@@ -23,6 +23,8 @@ It runs on **your own** free Cloudflare account with **your own** keys. Nobody e
 
 UK marketplace (amazon.co.uk) only.
 
+**Prefer a step-by-step guide?** Download the [Setup Guide (PDF)](docs/A2A-Analyse-Bot-Setup-Guide.pdf).
+
 ---
 
 ## What it costs
@@ -85,7 +87,7 @@ It will:
 2. create the storage it needs,
 3. deploy the bot,
 4. ask for your keys and save them as encrypted Cloudflare secrets (never in the folder, never on GitHub),
-5. register `/analyse`, `/analyse_bulk` and `/analyse_rules` with Discord, and print an **invite link**.
+5. register `/analyse`, `/analyse_bulk`, `/analyse_settings` and `/analyse_rules` with Discord, and print an **invite link**.
 
 ### 6. Connect Discord to the bot
 1. Back on your app's **General Information** page, paste the address the setup printed (it ends in `/interactions`) into **Interactions Endpoint URL** and click **Save Changes**. Discord checks it straight away; if it saves, it's working.
@@ -101,7 +103,8 @@ Type `/analyse` in your server. Done.
 |---|---|
 | `/analyse asin:B0… buy:12.99` | Scores one product. Leave out `buy` to see the max buy price, then tap **Enter buy price**. **Try another price** re-scores it at a different price. |
 | `/analyse_bulk list:B0AAAAAAA1 12.99, B0AAAAAAA2 8.50` | Analyses a list. You can also attach a CSV (see `examples/bulk-example.csv`); any columns work as long as each row has the ASIN, then the buy price. Results post in the same channel when done, about 4 ASINs a minute on the free plan. |
-| `/analyse_rules` | Shows the rules the bot is using (only you see it). |
+| `/analyse_settings` | Sets **your own** prep fee, VAT status, profit targets and ROI ladder, right in Discord. They only apply to your lookups. Run it with no options to see your settings, or `reset:True` to go back to the defaults. |
+| `/analyse_rules` | Shows the rules your deals are scored with (only you see it). |
 
 **Scores:** 💎 5 Strong buy · 🟢 4 Buy · 🟡 3 Maybe · 🔴 1 Skip · ⛔ 0 Loss.
 - 🟢 **Buy** = meets the ROI it needs for its sales speed, and your target profit.
@@ -114,7 +117,18 @@ The numbers are estimates in the same spirit as SellerAmp SAS. Always double-che
 
 ## Your rules
 
-All your settings are in **`wrangler.toml`** under `[vars]`, each with a note explaining it. Change them, then run:
+There are two ways to set them.
+
+**1. In Discord, for yourself: `/analyse_settings`.** No files or terminal needed, and each person in a server can have their own:
+```
+/analyse_settings prep_fee:0.45 vat_registered:True min_profit:1.50 target_profit:2.50
+/analyse_settings roi_ladder:10:80, 15:30, 20:20, 50:17, 100:15
+```
+- **ROI ladder:** `sales per month : ROI %`, separated by commas. Anything selling less than the first number is a Skip.
+- **Percentages:** you can type `20` or `0.20` for 20%.
+- **Changeable here:** prep fee, inbound per kg, storage per cubic foot, VAT registered, minimum and target profit, ROI ladder, ROI when sales are unknown, and the Min price ROI.
+
+**2. Server defaults, for everyone who hasn't set their own:** these are in **`wrangler.toml`** under `[vars]`, each with a note explaining it. Change them, then run:
 ```
 npm run deploy
 ```
@@ -150,7 +164,7 @@ Remember: everyone in your server uses **your** Keepa tokens, and the gating che
 ---
 
 ## Updating
-Back up your `wrangler.toml` (it holds your rules and your storage ID), download the new version, put your `wrangler.toml` back, and run `npm run deploy`.
+Back up your `wrangler.toml` (it holds your rules and your storage ID), download the new version, put your `wrangler.toml` back, and run `npm run setup` (leave every key blank to keep them). That also picks up any new commands.
 
 ## Troubleshooting
 - **Discord won't save the Interactions Endpoint URL**: the Public Key or Application ID is wrong. Run `npm run setup` again and re-enter them.

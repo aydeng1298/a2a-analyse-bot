@@ -12,7 +12,8 @@ binding = "BOT_KV"
 id = "REPLACE_WITH_YOUR_KV_ID"
 
 # ---------------------------------------------------------------------------
-# YOUR RULES. Change these to match how you source, then run `npm run deploy`.
+# YOUR RULES (server defaults). Change these, then run `npm run deploy`.
+# Anyone can also set their own in Discord with /analyse_settings; theirs win for their own lookups.
 # Money is in £. ROI and percentages are decimals (0.20 = 20%).
 # ---------------------------------------------------------------------------
 [vars]

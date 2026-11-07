@@ -1,6 +1,6 @@
 // Offline tests: fake Keepa / Amazon / Discord responses, no keys needed. Run: npm test
 import assert from "node:assert/strict";
-import { analyseAsin, analyseEmbed, parseBulk, reqRoiFor, cfg, bulkRow, bulkFinish, bulkRun, rulesText, accessError } from "../src/worker.js";
+import { settingsCommand, userSettings, analyseAsin, analyseEmbed, parseBulk, reqRoiFor, cfg, bulkRow, bulkFinish, bulkRun, rulesText, accessError } from "../src/worker.js";
 
 const KM = (ms) => Math.round(ms / 60000) - 21564000;   // ms -> Keepa minutes
 const now = Date.now(), day = 864e5;
@@ -81,5 +81,17 @@ console.log(await bulkRun({ ...base, BULK_PER_RUN: "10" }));
 assert.equal(JSON.parse(store.bulk).jobs.length, 0, "job should finish");
 assert.ok(calls.some((u) => u.includes("/channels/c1/messages")), "results posted to the channel");
 
+// personal settings: a higher prep fee lowers profit for that person only
+const msg = await settingsCommand(base, "u9", { prep_fee: 1.38, roi_ladder: "10:80, 20:25, 100:15", min_profit: 1.5 });
+assert.ok(/Your rules/.test(msg), msg);
+const mine = await userSettings(base, "u9");
+assert.equal(mine.PREP_FEE, "1.38");
+const p9 = await analyseAsin(base, "B0AAAAAAA1", 9.0, null, mine);
+assert.ok(Math.abs((k1.profit - p9.profit) - 1.0) < 0.01, "prep +£1 should cut profit by £1");
+assert.equal(cfg(base, mine).ladder[1][1], 0.25);
+assert.ok(/Not saved: roi_ladder/.test(await settingsCommand(base, "u9", { roi_ladder: "rubbish" })));
+assert.ok(/back to the server defaults/.test(await settingsCommand(base, "u9", { reset: true })));
+assert.deepEqual(await userSettings(base, "u9"), {});
+console.log(msg + "\n");
 console.log(rulesText({}));
 console.log("\nAll tests passed.");

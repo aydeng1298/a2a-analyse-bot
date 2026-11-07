@@ -77,7 +77,7 @@ if (Object.keys(secrets).length) {
 } else say("\n5/6  No key changes.");
 
 // 6. Register the slash commands
-say("6/6  Registering /analyse, /analyse_bulk and /analyse_rules with Discord…");
+say("6/6  Registering the /analyse commands with Discord…");
 await new Promise((r) => setTimeout(r, 4000));   // give the new secrets a moment
 let reg = "";
 try { reg = await (await fetch(`${url}/register?key=${setupKey}`)).text(); } catch (e) { reg = "Failed: " + e.message; }

@@ -22,11 +22,19 @@ const clean = (s) => String(s || "").replace(/["'\\{}<>@]/g, " ").replace(/\s+/g
 const list = (s) => String(s || "").split(/[\s,]+/).map((x) => x.trim()).filter(Boolean);
 
 // ---------------------------------------------------------------- settings (wrangler.toml [vars])
-function cfg(env) {
-  const num = (k, d) => (env[k] === undefined || env[k] === "" ? d : Number(env[k]));
-  const yes = (k, d) => (env[k] === undefined || env[k] === "" ? d : /^(1|true|yes|on)$/i.test(String(env[k])));
-  const ladder = String(env.ROI_LADDER || "10:0.80,15:0.30,20:0.20,50:0.17,100:0.15").split(",")
-    .map((p) => p.split(":").map(Number)).filter((p) => p.length === 2 && p.every((x) => !isNaN(x))).sort((a, b) => a[0] - b[0]);
+// `over` = one person's own settings from /analyse_settings (same names as the [vars]); they win over the server defaults
+const PERSONAL = ["VAT_REGISTERED", "PREP_FEE", "INBOUND_PER_KG", "STORAGE_PER_CUFT", "ROI_LADDER", "UNKNOWN_SALES_ROI", "MIN_PROFIT", "TARGET_PROFIT", "MIN_PRICE_ROI"];
+const ROI_KEYS = ["UNKNOWN_SALES_ROI", "STRONG_ROI_MARGIN", "MIN_PRICE_ROI"];
+const asRoi = (x) => (x > 1 ? x / 100 : x);   // accepts 0.20 or 20 for 20%
+function parseLadder(str) {
+  return String(str || "").split(",").map((p) => p.split(":").map((x) => Number(String(x).replace("%", "").trim())))
+    .filter((p) => p.length === 2 && p.every((x) => !isNaN(x) && x >= 0)).map(([m, r]) => [m, asRoi(r)]).sort((a, b) => a[0] - b[0]);
+}
+function cfg(env, over = {}) {
+  const v = (k) => (over[k] !== undefined && over[k] !== "" ? over[k] : env[k]);
+  const num = (k, d) => { const x = v(k); if (x === undefined || x === "") return d; const n = Number(x); return isNaN(n) ? d : ROI_KEYS.includes(k) ? asRoi(n) : n; };
+  const yes = (k, d) => { const x = v(k); return x === undefined || x === "" ? d : /^(1|true|yes|on)$/i.test(String(x)); };
+  const ladder = parseLadder(v("ROI_LADDER") || "10:0.80,15:0.30,20:0.20,50:0.17,100:0.15");
   return {
     vat: yes("VAT_REGISTERED", true),
     prep: num("PREP_FEE", 0.38), inboundKg: num("INBOUND_PER_KG", 0.30), storageCuft: num("STORAGE_PER_CUFT", 1.10),
@@ -111,8 +119,8 @@ function lastSeason(kp, day = today()) {
 }
 
 // ---------------------------------------------------------------- the analysis
-async function analyseAsin(env, asin, buy, spTok) {
-  const c = cfg(env), useSp = hasSpapi(env);
+async function analyseAsin(env, asin, buy, spTok, over = {}) {
+  const c = cfg(env, over), useSp = hasSpapi(env);
   const tok = useSp ? spTok || await spToken(env) : null;
   const out = { asin, buy: buy > 0 ? buy : null, warnings: [], mode: useSp ? "amazon" : "keepa" };
   const warn = (w) => out.warnings.push(w);
@@ -287,12 +295,12 @@ async function keepaGraph(req, env, ctx, asin) {
   return res;
 }
 
-async function analyseReply(env, origin, asinRaw, buyRaw) {
+async function analyseReply(env, origin, asinRaw, buyRaw, over = {}) {
   const asin = (String(asinRaw || "").toUpperCase().match(ASIN_RE) || [])[1];
   if (!asin) return { content: `"${clean(asinRaw)}" isn't an ASIN (it should look like B0AAAAAAA1).` };
   const buy = buyRaw == null || buyRaw === "" ? null : Number(String(buyRaw).replace(/[£,\s]/g, ""));
   if (buy != null && !(buy > 0)) return { content: `"${clean(buyRaw)}" isn't a price.` };
-  const a = await analyseAsin(env, asin, buy);
+  const a = await analyseAsin(env, asin, buy, null, over);
   a.graph = await graphUrl(env, origin, asin);
   return { content: "", embeds: [analyseEmbed(a)], components: analyseButtons(asin, buy != null) };
 }
@@ -337,6 +345,29 @@ async function useQuota(env, c, userId, n) {
   if (used + n > c.dailyLimit) return -1;
   await env.BOT_KV.put(key, String(used + n), { expirationTtl: 172800 });
   return c.dailyLimit - used - n;
+}
+
+// ---------------------------------------------------------------- personal settings (/analyse_settings), kept in KV per person
+async function userSettings(env, userId) {
+  if (!env.BOT_KV) return {};
+  try { return JSON.parse((await env.BOT_KV.get("set:" + userId)) || "{}"); } catch (_) { return {}; }
+}
+const SETTING_OPTS = { prep_fee: "PREP_FEE", inbound_per_kg: "INBOUND_PER_KG", storage_per_cuft: "STORAGE_PER_CUFT", vat_registered: "VAT_REGISTERED",
+  min_profit: "MIN_PROFIT", target_profit: "TARGET_PROFIT", roi_ladder: "ROI_LADDER", unknown_sales_roi: "UNKNOWN_SALES_ROI", min_price_roi: "MIN_PRICE_ROI" };
+async function settingsCommand(env, userId, opt) {
+  if (!env.BOT_KV) return "Personal settings need the BOT_KV storage set up (see README).";
+  let s = await userSettings(env, userId);
+  if (opt.reset) s = {};
+  const bad = [];
+  for (const [o, k] of Object.entries(SETTING_OPTS)) {
+    if (opt[o] === undefined) continue;
+    if (o === "roi_ladder") { if (!parseLadder(opt[o]).length) { bad.push("roi_ladder (use e.g. 10:80, 20:20, 100:15)"); continue; } s[k] = String(opt[o]); }
+    else if (o === "vat_registered") s[k] = opt[o] ? "true" : "false";
+    else if (!(Number(opt[o]) >= 0)) bad.push(o);
+    else s[k] = String(opt[o]);
+  }
+  await env.BOT_KV.put("set:" + userId, JSON.stringify(s));
+  return (bad.length ? `⚠️ Not saved: ${bad.join(", ")}\n\n` : "") + (opt.reset ? "Your settings are back to the server defaults.\n\n" : "") + rulesText(env, s);
 }
 
 // ---------------------------------------------------------------- /analyse_bulk (queued in KV, worked by the cron)
@@ -417,7 +448,7 @@ async function bulkRun(env) {
     const job = st.jobs[0], it = job.items[job.done.length];
     if (!it) { await bulkFinish(env, job); st.jobs.shift(); continue; }
     try {
-      const a = await analyseAsin(env, it.asin, it.buy, spTok);
+      const a = await analyseAsin(env, it.asin, it.buy, spTok, job.over || {});
       job.done.push(bulkRow(a, it));
       n++;
       if (a.tokensLeft != null && a.tokensLeft < 5) break;   // Keepa tokens low: carry on next minute
@@ -440,17 +471,29 @@ const COMMANDS = [
   { name: "analyse_bulk", description: "Analyse a list of ASINs (paste them or attach a CSV); results post here when done", options: [
     { type: 3, name: "list", description: "ASINs with optional buy prices, e.g. B0AAAAAAA1 12.99, B0AAAAAAA2 8.50", required: false },
     { type: 11, name: "file", description: "CSV or text file with ASIN and buy price columns", required: false }] },
-  { name: "analyse_rules", description: "Show the rules this bot scores deals with" },
+  { name: "analyse_rules", description: "Show the rules your deals are scored with" },
+  { name: "analyse_settings", description: "Set your own costs and rules (only affects your lookups). Run with no options to see them.", options: [
+    { type: 10, name: "prep_fee", description: "Your prep cost per unit in £, e.g. 0.45", required: false, min_value: 0 },
+    { type: 5, name: "vat_registered", description: "Are you VAT-registered?", required: false },
+    { type: 10, name: "min_profit", description: "Minimum profit per unit in £ (below this = Skip)", required: false, min_value: 0 },
+    { type: 10, name: "target_profit", description: "Profit in £ needed for a Buy (4/5)", required: false, min_value: 0 },
+    { type: 3, name: "roi_ladder", description: "Required ROI % by sales/month, e.g. 10:80, 15:30, 20:20, 50:17, 100:15", required: false },
+    { type: 10, name: "unknown_sales_roi", description: "ROI % needed when sales are unknown, e.g. 20", required: false, min_value: 0 },
+    { type: 10, name: "min_price_roi", description: "ROI % used for the Min price figure, e.g. 15", required: false, min_value: 0 },
+    { type: 10, name: "inbound_per_kg", description: "Shipping to Amazon per kg in £, e.g. 0.30", required: false, min_value: 0 },
+    { type: 10, name: "storage_per_cuft", description: "FBA storage per cubic foot per month in £, e.g. 1.10", required: false, min_value: 0 },
+    { type: 5, name: "reset", description: "Go back to the server defaults", required: false }] },
 ];
 async function registerCommands(env) {
   if (!env.DISCORD_APP_ID || !env.DISCORD_BOT_TOKEN) return "Set DISCORD_APP_ID and DISCORD_BOT_TOKEN first.";
   await dc(env, "PUT", `/applications/${env.DISCORD_APP_ID}/commands`, COMMANDS);
   return `Registered: ${COMMANDS.map((x) => "/" + x.name).join(" ")}\nInvite the bot: https://discord.com/oauth2/authorize?client_id=${env.DISCORD_APP_ID}&scope=bot+applications.commands&permissions=51200`;
 }
-function rulesText(env) {
-  const c = cfg(env), p = (x) => Math.round(x * 1000) / 10 + "%";
+function rulesText(env, over = {}) {
+  const c = cfg(env, over), p = (x) => Math.round(x * 1000) / 10 + "%";
+  const mine = Object.keys(over).filter((k) => PERSONAL.includes(k));
   return [
-    "**How deals are scored**",
+    mine.length ? `**Your rules** (your own settings: ${mine.map((k) => k.toLowerCase()).join(", ")}; the rest are the server's)` : "**How deals are scored** (server defaults: change yours with /analyse_settings)",
     `Required ROI by sales per month: ${c.ladder.length ? `under ${c.ladder[0][0]}/mo = skip · ` : ""}${c.ladder.map(([m, r]) => `${m}+/mo → ${p(r)}`).join(" · ")} · unknown → ${p(c.unknownRoi)}`,
     `Profit: at least ${gbp2(c.minProfit)}, target ${gbp2(c.targetProfit)}`,
     `💎 5 Strong buy: ROI ${p(c.strongRoiMargin)} over what it needs, ${gbp2(c.strongProfit)}+ profit, ${c.strongSales}+/mo, no warnings · 🟢 4 Buy: meets ROI and target · 🟡 3 Maybe: meets ROI under target, or a 4 with a warning (price spike, price fell last season, sellers piling in) or unknown sales · 🔴 1 Skip · ⛔ 0 Loss`,
@@ -479,17 +522,18 @@ async function interaction(req, env, ctx) {
     const val = (((i.data.components || [])[0] || {}).components || [])[0] || {};
     const stop = await limited(1);
     if (stop) return json({ type: 4, data: { content: stop, flags: 64 } });
-    ctx.waitUntil((async () => { let r; try { r = await analyseReply(env, origin, asin, val.value); } catch (e) { r = { content: "Analysis failed: " + e.message }; } await edit(r); })());
+    ctx.waitUntil((async () => { let r; try { r = await analyseReply(env, origin, asin, val.value, await userSettings(env, userId)); } catch (e) { r = { content: "Analysis failed: " + e.message }; } await edit(r); })());
     return json({ type: 5 });
   }
   if (i.type !== 2) return json({ type: 6 });
   const opt = Object.fromEntries((i.data.options || []).map((o) => [o.name, o.value]));
   const n = i.data.name;
-  if (n === "analyse_rules") return json({ type: 4, data: { content: rulesText(env), flags: 64 } });
+  if (n === "analyse_rules") return json({ type: 4, data: { content: rulesText(env, await userSettings(env, userId)), flags: 64 } });
+  if (n === "analyse_settings") return json({ type: 4, data: { content: (await settingsCommand(env, userId, opt)).slice(0, 1990), flags: 64 } });
   if (n === "analyse") {
     const stop = await limited(1);
     if (stop) return json({ type: 4, data: { content: stop, flags: 64 } });
-    ctx.waitUntil((async () => { let r; try { r = await analyseReply(env, origin, opt.asin, opt.buy); } catch (e) { r = { content: "Analysis failed: " + e.message }; } await edit(r); })());
+    ctx.waitUntil((async () => { let r; try { r = await analyseReply(env, origin, opt.asin, opt.buy, await userSettings(env, userId)); } catch (e) { r = { content: "Analysis failed: " + e.message }; } await edit(r); })());
     return json({ type: 5 });
   }
   if (n === "analyse_bulk") {
@@ -505,7 +549,7 @@ async function interaction(req, env, ctx) {
         if (stop) return edit({ content: stop + " (a bulk list counts one lookup per ASIN)" });
         const st = await bulkState(env);
         const ahead = st.jobs.reduce((s, j) => s + j.items.length - j.done.length, 0);
-        st.jobs.push({ id: Date.now().toString(36), items, done: [], user: userId, channel: i.channel_id, origin, at: new Date().toISOString() });
+        st.jobs.push({ id: Date.now().toString(36), items, done: [], user: userId, channel: i.channel_id, origin, over: await userSettings(env, userId), at: new Date().toISOString() });
         await bulkSave(env, st);
         const mins = Math.ceil((ahead + items.length) / Math.max(1, c.bulkPerRun));
         return edit({ content: `📊 Queued **${items.length}** ASINs (${items.filter((x) => x.buy).length} with a buy price)${items.length >= c.bulkMax ? ` (max ${c.bulkMax} per list)` : ""}.${ahead ? ` ${ahead} ahead of them.` : ""} Results post here in about ${mins} min.` });
@@ -532,4 +576,4 @@ export default {
   },
 };
 // exported for tests
-export { analyseAsin, analyseEmbed, parseBulk, reqRoiFor, cfg, keepaFees, bulkRow, bulkFinish, bulkRun, rulesText, accessError };
+export { settingsCommand, userSettings, analyseAsin, analyseEmbed, parseBulk, reqRoiFor, cfg, keepaFees, bulkRow, bulkFinish, bulkRun, rulesText, accessError };
